@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Trace the Curve</title>
+<style>
+:root{--bg1:#1a1a3e;--bg2:#2d1b4e;--accent:#7c4dff;--accent2:#ff6b9d;--good:#4caf50;--bad:#ff5252;--hint:#ffd54f;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{margin:0;height:100%;font-family:'Segoe UI',Arial,sans-serif;background:linear-gradient(135deg,var(--bg1),var(--bg2));overflow:hidden;touch-action:none;color:#fff;}
+#app{position:relative;width:100vw;height:100vh;overflow:hidden;}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;text-align:center;}
+.screen.active{display:flex;}
+h1{font-size:2.2em;margin:0 0 4px;text-shadow:0 0 20px var(--accent);}
+.subtitle{color:#d8c9ff;max-width:480px;margin-bottom:20px;line-height:1.5;}
+button{font-family:inherit;font-size:1em;padding:12px 24px;margin:6px;border:none;border-radius:14px;cursor:pointer;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 6px 0 rgba(0,0,0,.25);transition:all 0.1s;}
+button:active{transform:translateY(4px);box-shadow:0 2px 0 rgba(0,0,0,.25);}
+button:disabled{opacity:0.5;cursor:not-allowed;filter:grayscale(1);}
+button.secondary{background:#3a2e5e;}
+button.small{padding:8px 14px;font-size:.85em;}
+button.hint-btn{background:linear-gradient(135deg, #ffd54f, #f57f17); color: #000;}
+
+#tutorialScreen canvas{background:#0f0f2a;border-radius:16px;border:3px solid var(--accent);}
+#gameScreen{padding:6px;justify-content:flex-start;}
+#hud{width:100%;max-width:640px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+#lives{font-size:1.3em;letter-spacing:3px;}
+#pauseBtn{margin:0;padding:8px 12px;font-size:1.1em;border-radius:50%;}
+#targetLabel{font-size:1.15em;font-weight:700;color:#ffd54f;margin:2px 0 6px;}
+#timerBarWrap{width:100%;max-width:640px;height:9px;background:#2a2050;border-radius:6px;overflow:hidden;margin-bottom:6px;}
+#timerFill{height:100%;width:100%;background:linear-gradient(90deg,#4caf50,#ffeb3b,#ff5252);transition:width .1s linear;}
+#gameCanvas{background:#0f0f2a;border-radius:16px;border:3px solid var(--accent);max-width:100%;touch-action:none;cursor: crosshair;}
+#roundControls{margin-top:8px;display:flex;gap:10px;flex-wrap: wrap;justify-content: center;}
+#feedbackText{min-height:26px;font-weight:700;margin-top:4px;}
+.overlay{position:absolute;inset:0;background:rgba(10,5,30,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:20;}
+.overlay.hidden{display:none;}
+.heart{display:inline-block;transition:transform .2s;}
+.heart.lost{opacity:.25;}
+.heart.shake{animation:shake .3s;}
+@keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-6px);}75%{transform:translateX(6px);}}
+.flash-good{animation:flashGood .4s;}
+.flash-bad{animation:flashBad .4s;}
+@keyframes flashGood{50%{filter:brightness(1.6) drop-shadow(0 0 20px #4caf50);}}
+@keyframes flashBad{50%{filter:brightness(1.6) drop-shadow(0 0 20px #ff5252);}}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div id="startScreen" class="screen active">
+  <h1>✏️ Trace the Curve</h1>
+  <p class="subtitle">Trace quadratic curves freehand. In early levels, you're given coordinates—your first touch will snap to the starting point. Use your 3 hints wisely to see the target points!</p>
+  <button id="playBtn">▶ Play</button>
+  <button id="tutorialBtn" class="secondary">📺 How To Play</button>
+</div>
+
+<div id="tutorialScreen" class="screen">
+  <h1 style="font-size:1.3em;">📺 Tutorial</h1>
+  <canvas id="tutorialCanvas" width="480" height="320"></canvas>
+  <div id="tutorialCaption" style="max-width:460px;min-height:50px;margin:12px 0;">Loading...</div>
+  <div>
+    <button id="tutorialReplay" class="secondary small">↻ Replay</button>
+    <button id="tutorialSkip" class="small">Got it, Play!</button>
+    <button id="tutorialBack" class="secondary small">Back</button>
+  </div>
+</div>
+
+<div id="gameScreen" class="screen">
+  <div id="hud">
+    <div id="lives">♥♥♥</div>
+    <div id="scoreLevel">Score: 0 | Level 1</div>
+    <button id="pauseBtn">⏸</button>
+  </div>
+  <div id="targetLabel">Points: (0, 0), (1, 1), (2, 4)</div>
+  <div id="timerBarWrap"><div id="timerFill"></div></div>
+  <canvas id="gameCanvas" width="640" height="420"></canvas>
+  <div id="feedbackText"></div>
+  <div id="roundControls">
+    <button id="hintBtn" class="hint-btn small">💡 Hint (3)</button>
+    <button id="clearBtn" class="secondary small">🧹 Clear</button>
+    <button id="doneBtn" class="small">✓ Done Tracing</button>
+  </div>
+</div>
+
+<div id="pauseOverlay" class="overlay hidden">
+  <h2>⏸ Paused</h2>
+  <button id="resumeBtn">▶ Resume</button>
+  <button id="soundToggleBtn" class="secondary">🔊 Sound: On</button>
+  <button id="mainMenuBtn" class="secondary">🏠 Main Menu</button>
+</div>
+
+<div id="endScreen" class="screen">
+  <h2>💥 Game Over</h2>
+  <p id="finalStats"></p>
+  <button id="restartBtn">🔄 Play Again</button>
+  <button id="endMainMenuBtn" class="secondary">🏠 Main Menu</button>
+</div>
+
+</div>
+<script>
+/* ============ AUDIO ============ */
+const Audio_=(()=>{
+  let ctx=null,master=null,bgmGain=null,sfxGain=null,muted=false,bgmTimer=null,bgmStep=0;
+  function ensure(){
+    if(!ctx){
+      ctx=new (window.AudioContext||window.webkitAudioContext)();
+      master=ctx.createGain();master.gain.value=1;master.connect(ctx.destination);
+      bgmGain=ctx.createGain();bgmGain.gain.value=.12;bgmGain.connect(master);
+      sfxGain=ctx.createGain();sfxGain.gain.value=.35;sfxGain.connect(master);
+    }
+    if(ctx.state==='suspended')ctx.resume();
+  }
+  function tone(freq,dur,type='sine',g=sfxGain,vol=1,delay=0){
+    ensure();const t0=ctx.currentTime+delay;
+    const o=ctx.createOscillator();o.type=type;o.frequency.setValueAtTime(freq,t0);
+    const gn=ctx.createGain();gn.gain.setValueAtTime(0,t0);
+    gn.gain.linearRampToValueAtTime(vol,t0+.02);
+    gn.gain.exponentialRampToValueAtTime(.001,t0+dur);
+    o.connect(gn);gn.connect(g);o.start(t0);o.stop(t0+dur+.05);
+  }
+  function sweep(f1,f2,dur,type='sawtooth'){
+    ensure();const t0=ctx.currentTime;
+    const o=ctx.createOscillator();o.type=type;
+    o.frequency.setValueAtTime(f1,t0);o.frequency.exponentialRampToValueAtTime(f2,t0+dur);
+    const g=ctx.createGain();g.gain.setValueAtTime(.3,t0);g.gain.exponentialRampToValueAtTime(.001,t0+dur);
+    o.connect(g);g.connect(sfxGain);o.start(t0);o.stop(t0+dur+.05);
+  }
+  const scale=[261.6,293.7,329.6,349.2,392,440,493.9,523.3];
+  function startBgm(){ensure();stopBgm();bgmStep=0;
+    bgmTimer=setInterval(()=>{const notes=[0,2,4,2,5,4,2,0];const n=scale[notes[bgmStep%notes.length]];
+      tone(n,.35,'triangle',bgmGain,.5); if(bgmStep%4===0) tone(n/2,.5,'sine',bgmGain,.3); bgmStep++;
+    },300);
+  }
+  function stopBgm(){if(bgmTimer){clearInterval(bgmTimer);bgmTimer=null;}}
+  function toggleMute(){muted=!muted;ensure();master.gain.setTargetAtTime(muted?0:1,ctx.currentTime,.05);return muted;}
+  return{
+    ensure,
+    scribble(){tone(500+Math.random()*200,.04,'sine',sfxGain,.08);},
+    pass(){tone(660,.12,'sine',sfxGain,.5);tone(880,.18,'sine',sfxGain,.5,.1);tone(1100,.2,'sine',sfxGain,.4,.2);},
+    fail(){sweep(220,110,.3,'square');},
+    lifeLost(){sweep(300,80,.45,'sawtooth');},
+    levelUp(){[523,659,784,1046].forEach((f,i)=>tone(f,.25,'triangle',sfxGain,.5,i*.09));},
+    click(){tone(440,.05,'square',sfxGain,.2);},
+    startBgm,stopBgm,toggleMute,isMuted(){return muted;}
+  };
+})();
+
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+
+/* ============ TUTORIAL ============ */
+const tutCanvas=document.getElementById('tutorialCanvas'),tCtx=tutCanvas.getContext('2d');
+const tutorialCaption=document.getElementById('tutorialCaption');
+let tutFrame=0,tutAnimId=null,tutPhase=0;
+const tutSteps=[
+"In early levels, we give you coordinates. Your first touch will snap exactly to the first point.",
+"Trace the path! Dots are hidden by default, but you can use a Hint to see them.",
+"Tap Done. The real curve appears—the closer your trace, the higher your score!",
+"Get close enough for a bonus! See two points sharing the same Y value (many-to-one).",
+"You only have 3 hints for the WHOLE game. Use them when the formulas get tough!"
+];
+function drawTutFrame(){
+  tCtx.clearRect(0,0,480,320);tCtx.fillStyle="#0f0f2a";tCtx.fillRect(0,0,480,320);
+  tCtx.strokeStyle="#3a3a6e";tCtx.lineWidth=1;
+  tCtx.beginPath();tCtx.moveTo(20,160);tCtx.lineTo(460,160);tCtx.moveTo(240,20);tCtx.lineTo(240,300);tCtx.stroke();
+  if(tutPhase>=1){
+    tCtx.strokeStyle="#ffd54f";tCtx.lineWidth=3;tCtx.lineCap='round';tCtx.beginPath();
+    const total=220;const progress=Math.min(1,(tutFrame%160)/120);
+    const n=Math.floor(total*progress);
+    for(let i=0;i<=n;i++){
+      const px=20+i*(440/total);const x=(px-240)/20;const y=0.45*x*x;const py=280-y;
+      if(i===0)tCtx.moveTo(px,py);else tCtx.lineTo(px,py);
+    }
+    tCtx.stroke();
+  }
+  tutorialCaption.textContent=tutSteps[tutPhase];
+  tutFrame++;tutAnimId=requestAnimationFrame(drawTutFrame);
+}
+function startTutorial(){
+  tutPhase=0;tutFrame=0;cancelAnimationFrame(tutAnimId);drawTutFrame();
+  clearInterval(window._tutInterval);
+  window._tutInterval=setInterval(()=>{tutPhase++;if(tutPhase>=tutSteps.length){clearInterval(window._tutInterval);tutPhase=tutSteps.length-1;}},3500);
+}
+document.getElementById('tutorialBtn').addEventListener('click',()=>{Audio_.ensure();showScreen('tutorialScreen');startTutorial();});
+document.getElementById('tutorialReplay').addEventListener('click',startTutorial);
+document.getElementById('tutorialBack').addEventListener('click',()=>{cancelAnimationFrame(tutAnimId);clearInterval(window._tutInterval);showScreen('startScreen');});
+document.getElementById('tutorialSkip').addEventListener('click',()=>{cancelAnimationFrame(tutAnimId);clearInterval(window._tutInterval);startGame();});
+
+/* ============ GAME ============ */
+const canvas=document.getElementById('gameCanvas'),ctx=canvas.getContext('2d');
+const livesEl=document.getElementById('lives'),scoreLevelEl=document.getElementById('scoreLevel');
+const timerFill=document.getElementById('timerFill'),feedbackText=document.getElementById('feedbackText');
+const targetLabel=document.getElementById('targetLabel'), hintBtn=document.getElementById('hintBtn');
+const clearBtn=document.getElementById('clearBtn'),doneBtn=document.getElementById('doneBtn');
+
+const VIEW={xMin:-5,xMax:5,yMin:-3,yMax:9};
+
+// Physical-distance accuracy settings.
+// We convert a drawn point's world-unit error into real-world centimeters
+// using the canvas's actual rendered CSS size (assumes ~96 CSS px per inch,
+// i.e. ~37.8 px per cm — the standard web convention).
+const PX_PER_CM = 37.8;
+const GOOD_CM = 1;   // error at/under this = full accuracy credit
+const BAD_CM  = 2.5;   // error at/over this = zero accuracy credit
+
+let state={
+  lives:3,score:0,level:1,roundsThisLevel:0,
+  a:1,b:0,c:0,path:[],phase:'drawing',
+  timeLimit:16000,timeLeft:16000,timerId:null,lastTick:0,
+  paused:false,running:false,gridDensity:'full',
+  targetPoints:null, hintsLeft: 3, showHintThisRound: false
+};
+
+function toPx(x,y){
+  const px=((x-VIEW.xMin)/(VIEW.xMax-VIEW.xMin))*canvas.width;
+  const py=canvas.height-((y-VIEW.yMin)/(VIEW.yMax-VIEW.yMin))*canvas.height;
+  return[px,py];
+}
+function toWorldX(px){return VIEW.xMin+(px/canvas.width)*(VIEW.xMax-VIEW.xMin);}
+function toWorldY(py){return VIEW.yMin+((canvas.height-py)/canvas.height)*(VIEW.yMax-VIEW.yMin);}
+function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min;}
+function choice(arr){return arr[Math.floor(Math.random()*arr.length)];}
+
+function generateRound(){
+  const lvl=Math.min(state.level,10);
+  let a,b,c,vx,vertexY,tries=0;
+  
+  do {
+    const aMag = lvl <= 3 ? 1 : choice([1, 1, 1.5]);
+    const aSign = (lvl >= 5 && Math.random() < 0.35) ? -1 : 1;
+    a = aSign * aMag;
+    if (lvl <= 3) {
+       let halfB = randInt(-2, 2); b = halfB * 2 * a; c = randInt(-1, 3);
+    } else {
+       b = randInt(-Math.min(1+lvl,6), Math.min(1+lvl,6));
+       c = randInt(-2, 2+Math.min(lvl,5));
+    }
+    vx=-b/(2*a); vertexY=a*vx*vx+b*vx+c; tries++;
+  } while((vertexY<VIEW.yMin+0.5 || vertexY>VIEW.yMax-1) && tries<40);
+
+  state.a=a;state.b=b;state.c=c;state.path=[];state.phase='drawing';state.showHintThisRound=false;
+  state.timeLimit = Math.max(6000, 26000 - lvl * 1800);
+  state.timeLeft=state.timeLimit;
+  state.gridDensity = lvl<=3?'full': lvl<=6?'sparse':'axesOnly';
+
+  const bStr = b===0?'': (b>0?` + ${b}x`:` - ${Math.abs(b)}x`);
+  const cStr = c===0?'': (c>0?` + ${c}`:` - ${Math.abs(c)}`);
+  const aStr = a===1?'':a===-1?'-':a;
+  
+  if (lvl <= 3) {
+      let dx = lvl === 1 ? 1 : 2;
+      let x1 = vx - dx, y1 = a*x1*x1 + b*x1 + c;
+      let x2 = vx + dx, y2 = a*x2*x2 + b*x2 + c;
+      targetLabel.textContent = `Points: (${x1}, ${y1}), (${vx}, ${vertexY}), (${x2}, ${y2})`;
+      state.targetPoints = [{x:x1, y:y1}, {x:vx, y:vertexY}, {x:x2, y:y2}];
+  } else {
+      targetLabel.textContent = `Draw: f(x) = ${aStr}x²${bStr}${cStr}`;
+      state.targetPoints = null;
+  }
+
+  hintBtn.textContent = `💡 Hint (${state.hintsLeft})`;
+  hintBtn.disabled = state.hintsLeft <= 0;
+  feedbackText.textContent='';
+  clearBtn.disabled=false; doneBtn.disabled=false;
+}
+
+function drawGrid(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#0f0f2a";ctx.fillRect(0,0,canvas.width,canvas.height);
+  const step = state.gridDensity==='full'?1:2;
+  const [zx,zy] = toPx(0,0);
+
+  if(state.gridDensity!=='axesOnly'){
+    ctx.strokeStyle="#232048";ctx.lineWidth=1;
+    for(let x=Math.ceil(VIEW.xMin);x<=VIEW.xMax;x+=step){
+        const[px]=toPx(x,0); ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,canvas.height);ctx.stroke();
+    }
+    for(let y=Math.ceil(VIEW.yMin);y<=VIEW.yMax;y+=step){
+        const[,py]=toPx(0,y); ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(canvas.width,py);ctx.stroke();
+    }
+  }
+  ctx.strokeStyle="#7a7ac0";ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,zy);ctx.lineTo(canvas.width,zy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(zx,0);ctx.lineTo(zx,canvas.height);ctx.stroke();
+
+  ctx.font = "11px Arial"; ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; ctx.textAlign = "center";
+  const numStep = state.gridDensity==='full'?1:2;
+  for(let x=Math.ceil(VIEW.xMin);x<=VIEW.xMax;x+=numStep){ if(x!==0){const[px]=toPx(x,0); ctx.fillText(x,px,zy+14);}}
+  ctx.textAlign="right";
+  for(let y=Math.ceil(VIEW.yMin);y<=VIEW.yMax;y+=numStep){ if(y!==0){const[,py]=toPx(0,y); ctx.fillText(y,zx-8,py);}}
+}
+
+function drawPlayerPath(){
+  if(state.path.length<1)return;
+  ctx.strokeStyle="#ffd54f";ctx.lineWidth=4;ctx.lineCap='round';ctx.lineJoin='round';
+  ctx.beginPath();
+  state.path.forEach((p,i)=>{const[px,py]=toPx(p.x,p.y);if(i===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);});
+  ctx.stroke();
+  // Draw a small circle at start to show snap
+  const [sx, sy] = toPx(state.path[0].x, state.path[0].y);
+  ctx.fillStyle="#ffd54f"; ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 7); ctx.fill();
+}
+
+function evaluateQuadratic(points, x){
+  const [p1,p2,p3] = points;
+  const term1 = (p1.y * ((x - p2.x) * (x - p3.x))) / ((p1.x - p2.x) * (p1.x - p3.x));
+  const term2 = (p2.y * ((x - p1.x) * (x - p3.x))) / ((p2.x - p1.x) * (p2.x - p3.x));
+  const term3 = (p3.y * ((x - p1.x) * (x - p2.x))) / ((p3.x - p1.x) * (p3.x - p2.x));
+  return term1 + term2 + term3;
+}
+
+function drawIdealCurve(){
+  ctx.strokeStyle="#7c4dff";ctx.lineWidth=3.5;ctx.setLineDash([9,7]);ctx.beginPath();
+  let started=false;
+
+  if(state.targetPoints && state.targetPoints.length === 3){
+    const points=[...state.targetPoints].sort((a,b)=>a.x-b.x);
+    const xStart=Math.max(VIEW.xMin, points[0].x);
+    const xEnd=Math.min(VIEW.xMax, points[points.length-1].x);
+    const step=(xEnd-xStart)/140;
+
+    for(let i=0;i<=140;i++){
+      const x=xStart + step*i;
+      const y=evaluateQuadratic(points, x);
+      if(y<VIEW.yMin-1||y>VIEW.yMax+1){started=false;continue;}
+      const[px,py]=toPx(x,y);
+      if(!started){ctx.moveTo(px,py);started=true;}else ctx.lineTo(px,py);
+    }
+  } else {
+    for(let x=VIEW.xMin;x<=VIEW.xMax;x+=0.05){
+      const y=state.a*x*x+state.b*x+state.c;
+      if(y<VIEW.yMin-1||y>VIEW.yMax+1){started=false;continue;}
+      const[px,py]=toPx(x,y);
+      if(!started){ctx.moveTo(px,py);started=true;}else ctx.lineTo(px,py);
+    }
+  }
+
+  ctx.stroke();ctx.setLineDash([]);
+}
+
+function render(){
+  drawGrid();
+  // Show target points ONLY if hint is used OR round is over
+  if(state.targetPoints && (state.showHintThisRound || state.phase === 'result')){
+    ctx.fillStyle = "#ffd54f";
+    state.targetPoints.forEach(p => {
+      const [px, py] = toPx(p.x, p.y);
+      ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.stroke();
+    });
+  }
+  drawPlayerPath();
+}
+
+function updateHUD(){
+  livesEl.innerHTML=Array.from({length:3},(_,i)=>`<span class="heart ${i<state.lives?'':'lost'}" id="heart${i}">♥</span>`).join(' ');
+  scoreLevelEl.textContent=`Score: ${state.score} | Level ${state.level}`;
+}
+
+function startRound(){
+  generateRound();render();updateHUD();
+  state.lastTick=performance.now();
+  clearInterval(state.timerId);
+  state.timerId=setInterval(tick,50);
+}
+function tick(){
+  if(state.paused||state.phase!=='drawing')return;
+  const now=performance.now();const dt=now-state.lastTick;state.lastTick=now;
+  state.timeLeft-=dt;
+  const pct=Math.max(0,state.timeLeft/state.timeLimit)*100;
+  timerFill.style.width=pct+'%';
+  if(state.timeLeft<=0){clearInterval(state.timerId);submitDrawing(true);}
+}
+
+let isDrawing=false;
+canvas.addEventListener('pointerdown',e=>{
+  if(state.paused||!state.running||state.phase!=='drawing')return;
+  isDrawing=true;
+  const rect=canvas.getBoundingClientRect();
+  const scaleX=canvas.width/rect.width,scaleY=canvas.height/rect.height;
+  const px=(e.clientX-rect.left)*scaleX, py=(e.clientY-rect.top)*scaleY;
+  
+  // Requirement: Snap to first point if coordinate stage
+  if(state.path.length === 0 && state.targetPoints) {
+    state.path.push({x: state.targetPoints[0].x, y: state.targetPoints[0].y});
+  } else if (state.path.length === 0) {
+    state.path.push({x:toWorldX(px),y:toWorldY(py)});
+  }
+  render();
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!isDrawing||state.paused||!state.running||state.phase!=='drawing')return;
+  const rect=canvas.getBoundingClientRect();
+  const scaleX=canvas.width/rect.width,scaleY=canvas.height/rect.height;
+  const px=(e.clientX-rect.left)*scaleX, py=(e.clientY-rect.top)*scaleY;
+  state.path.push({x:toWorldX(px),y:toWorldY(py)});
+  if(Math.random()<0.15)Audio_.scribble();
+  render();
+});
+['pointerup','pointerleave','pointercancel'].forEach(ev=>canvas.addEventListener(ev,()=>{isDrawing=false;}));
+
+hintBtn.addEventListener('click', () => {
+  if(state.hintsLeft > 0 && !state.showHintThisRound && state.phase === 'drawing') {
+    state.hintsLeft--;
+    state.showHintThisRound = true;
+    hintBtn.textContent = `💡 Hint (${state.hintsLeft})`;
+    if(state.hintsLeft === 0) hintBtn.disabled = true;
+    Audio_.click();
+    render();
+  }
+});
+
+clearBtn.addEventListener('click',()=>{
+  if(state.phase!=='drawing')return;
+  state.path=[];render();Audio_.click();
+});
+doneBtn.addEventListener('click',()=>{
+  if(state.phase!=='drawing' || state.path.length < 2)return;
+  clearInterval(state.timerId);
+  submitDrawing(false);
+});
+
+// Distance-based scoring: at each sampled x, compare the player's drawn
+// y-value to the true curve's y-value, convert that vertical gap into
+// real-world centimeters (using the canvas's actual on-screen size), then
+// grade it: <=1cm is full credit, >=3cm is zero credit, linear between.
+function scoreDrawing(){
+  const samples=22;
+  const xStart=VIEW.xMin+0.5, xEnd=VIEW.xMax-0.5;
+  const rect=canvas.getBoundingClientRect();
+  const pxPerWorldUnitY = rect.height / (VIEW.yMax - VIEW.yMin);
+
+  let cmDiffs=[],gaps=0;
+  for(let i=0;i<samples;i++){
+    const sx=xStart+(xEnd-xStart)*(i/(samples-1));
+    const near=state.path.filter(p=>Math.abs(p.x-sx)<0.4);
+    if(near.length===0){gaps++;continue;}
+    const avgY=near.reduce((s,p)=>s+p.y,0)/near.length;
+    const actualY=state.a*sx*sx+state.b*sx+state.c;
+    const worldDiff=Math.abs(avgY-actualY);
+    const cmDiff=(worldDiff*pxPerWorldUnitY)/PX_PER_CM;
+    cmDiffs.push(cmDiff);
+  }
+  const coverage=(samples-gaps)/samples;
+  const meanCm = cmDiffs.length? cmDiffs.reduce((s,d)=>s+d,0)/cmDiffs.length : 999;
+
+  let accuracy;
+  if(meanCm<=GOOD_CM) accuracy=1;
+  else if(meanCm>=BAD_CM) accuracy=0;
+  else accuracy=1-(meanCm-GOOD_CM)/(BAD_CM-GOOD_CM);
+
+  return {coverage,accuracy,overall:accuracy*coverage,meanCm};
+}
+
+function submitDrawing(timedOut){
+  state.phase='result';
+  const result=scoreDrawing();
+  render();drawIdealCurve();
+  clearBtn.disabled=true;doneBtn.disabled=true;
+
+  const passed = result.overall>=0.18 && result.coverage>=0.2;
+  if(passed){
+    Audio_.pass();
+    const pts = Math.round(result.overall*150)+state.level*10;
+    state.score+=pts; state.roundsThisLevel++;
+    feedbackText.textContent = `✅ Good! Accuracy ${(result.accuracy*100)|0}% (~${result.meanCm.toFixed(1)}cm off) · +${pts}`;
+    document.getElementById('gameScreen').classList.add('flash-good');
+    updateHUD();
+    setTimeout(()=>{document.getElementById('gameScreen').classList.remove('flash-good');bonusReveal();},1400);
+  } else {
+    Audio_.fail();Audio_.lifeLost(); state.lives--;
+    feedbackText.textContent = timedOut ? "⏰ Time's up!" : `❌ Off track (~${result.meanCm.toFixed(1)}cm off)`;
+    document.getElementById('gameScreen').classList.add('flash-bad');
+    updateHUD();
+    const heartEl=document.getElementById('heart'+state.lives);
+    if(heartEl)heartEl.classList.add('shake');
+    setTimeout(()=>{
+      document.getElementById('gameScreen').classList.remove('flash-bad');
+      if(state.lives<=0) endGame(); else if(state.running) startRound();
+    },1800);
+  }
+}
+
+// Only ever called after a passed round, so it always advances the level.
+function bonusReveal(){
+  const vx=-state.b/(2*state.a); const vy=state.a*vx*vx+state.b*vx+state.c;
+  let k = state.a>0 ? vy+randInt(1,3) : vy-randInt(1,3);
+  k=Math.max(VIEW.yMin+0.5,Math.min(VIEW.yMax-0.5,k));
+  const D=state.b*state.b-4*state.a*(state.c-k);
+  let pts=[];
+  if(D>0){
+    const sq=Math.sqrt(D);
+    pts=[{x:(-state.b+sq)/(2*state.a),y:k},{x:(-state.b-sq)/(2*state.a),y:k}];
+  }
+  render();drawIdealCurve();
+  if(pts.length===2){
+    const[,py]=toPx(0,k);
+    ctx.strokeStyle="#4caf50";ctx.setLineDash([8,6]);ctx.lineWidth=2.5;
+    ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(canvas.width,py);ctx.stroke();ctx.setLineDash([]);
+    pts.forEach(p=>{const[px,ppy]=toPx(p.x,p.y);
+      ctx.fillStyle="#4caf50";ctx.beginPath();ctx.arc(px,ppy,8,0,7);ctx.fill();
+      ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.stroke();});
+    feedbackText.textContent = `Bonus: Many-to-one! Two x-values for y = ${k.toFixed(1)}`;
+    state.score+=30;updateHUD();
+  }
+  setTimeout(()=>{
+    state.level++;
+    if(state.level>10){
+      state.level=10;
+      feedbackText.textContent="🏁 You cleared all 10 levels!";
+      updateHUD();
+      setTimeout(()=>endGame(),1200);
+      return;
+    }
+    Audio_.levelUp();
+    feedbackText.textContent="🎉 Level Up → "+state.level;
+    updateHUD();
+    setTimeout(()=>{ if(state.running)startRound(); }, 1000);
+  },2000);
+}
+
+function startGame(){
+  Audio_.ensure();
+  state={...state,lives:3,score:0,level:1,roundsThisLevel:0,hintsLeft:3,paused:false,running:true};
+  updateHUD();showScreen('gameScreen');Audio_.startBgm();startRound();
+}
+function endGame(){
+  state.running=false;clearInterval(state.timerId);Audio_.stopBgm();
+  document.getElementById('finalStats').innerHTML=`Final Score: <b>${state.score}</b><br>Level: <b>${state.level}</b>`;
+  showScreen('endScreen');
+}
+
+const pauseOverlay=document.getElementById('pauseOverlay');
+document.getElementById('pauseBtn').addEventListener('click',()=>{if(!state.running)return;state.paused=true;pauseOverlay.classList.remove('hidden');});
+document.getElementById('resumeBtn').addEventListener('click',()=>{state.paused=false;state.lastTick=performance.now();pauseOverlay.classList.add('hidden');});
+document.getElementById('soundToggleBtn').addEventListener('click',function(){const muted=Audio_.toggleMute();this.textContent=muted?"🔇 Sound: Off":"🔊 Sound: On";});
+document.getElementById('mainMenuBtn').addEventListener('click',()=>{state.running=false;state.paused=false;clearInterval(state.timerId);Audio_.stopBgm();pauseOverlay.classList.add('hidden');showScreen('startScreen');});
+document.getElementById('playBtn').addEventListener('click',startGame);
+document.getElementById('restartBtn').addEventListener('click',startGame);
+document.getElementById('endMainMenuBtn').addEventListener('click',()=>showScreen('startScreen'));
+
+function fitCanvas(){
+  const maxW=Math.min(640,window.innerWidth-24);
+  canvas.style.width=maxW+'px';canvas.style.height=(maxW*420/640)+'px';
+  tutCanvas.style.width=Math.min(480,window.innerWidth-24)+'px';tutCanvas.style.height='auto';
+}
+window.addEventListener('resize',fitCanvas);fitCanvas();
+</script>
+</body>
+</html>
