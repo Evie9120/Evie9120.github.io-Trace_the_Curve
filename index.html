@@ -47,7 +47,7 @@ button.hint-btn{background:linear-gradient(135deg, #ffd54f, #f57f17); color: #00
 
 <div id="startScreen" class="screen active">
   <h1>✏️ Trace the Curve</h1>
-  <p class="subtitle">Trace quadratic curves freehand. In early levels, you're given coordinates—your first touch will snap to the starting point. Use your 3 hints wisely to see the target points!</p>
+  <p class="subtitle">Trace quadratic curves freehand. In early levels, you're given coordinates to guide you. Use your 3 hints wisely to see the target points!</p>
   <button id="playBtn">▶ Play</button>
   <button id="tutorialBtn" class="secondary">📺 How To Play</button>
 </div>
@@ -150,7 +150,7 @@ const tutCanvas=document.getElementById('tutorialCanvas'),tCtx=tutCanvas.getCont
 const tutorialCaption=document.getElementById('tutorialCaption');
 let tutFrame=0,tutAnimId=null,tutPhase=0;
 const tutSteps=[
-"In early levels, we give you coordinates. Your first touch will snap exactly to the first point.",
+"In early levels, we give you coordinates to guide your trace.",
 "Trace the path! Dots are hidden by default, but you can use a Hint to see them.",
 "Tap Done. The real curve appears—the closer your trace, the higher your score!",
 "Get close enough for a bonus! See two points sharing the same Y value (many-to-one).",
@@ -243,16 +243,18 @@ function generateRound(){
   const bStr = b===0?'': (b>0?` + ${b}x`:` - ${Math.abs(b)}x`);
   const cStr = c===0?'': (c>0?` + ${c}`:` - ${Math.abs(c)}`);
   const aStr = a===1?'':a===-1?'-':a;
-  
+
+  // Always compute 3 on-curve points (vertex ± dx) so Hint has something to
+  // show at every level, even once we stop printing coordinates in the label.
+  let dx = lvl === 1 ? 1 : 2;
+  let x1 = vx - dx, y1 = a*x1*x1 + b*x1 + c;
+  let x2 = vx + dx, y2 = a*x2*x2 + b*x2 + c;
+  state.targetPoints = [{x:x1, y:y1}, {x:vx, y:vertexY}, {x:x2, y:y2}];
+
   if (lvl <= 3) {
-      let dx = lvl === 1 ? 1 : 2;
-      let x1 = vx - dx, y1 = a*x1*x1 + b*x1 + c;
-      let x2 = vx + dx, y2 = a*x2*x2 + b*x2 + c;
       targetLabel.textContent = `Points: (${x1}, ${y1}), (${vx}, ${vertexY}), (${x2}, ${y2})`;
-      state.targetPoints = [{x:x1, y:y1}, {x:vx, y:vertexY}, {x:x2, y:y2}];
   } else {
       targetLabel.textContent = `Draw: f(x) = ${aStr}x²${bStr}${cStr}`;
-      state.targetPoints = null;
   }
 
   hintBtn.textContent = `💡 Hint (${state.hintsLeft})`;
@@ -376,13 +378,7 @@ canvas.addEventListener('pointerdown',e=>{
   const rect=canvas.getBoundingClientRect();
   const scaleX=canvas.width/rect.width,scaleY=canvas.height/rect.height;
   const px=(e.clientX-rect.left)*scaleX, py=(e.clientY-rect.top)*scaleY;
-  
-  // Requirement: Snap to first point if coordinate stage
-  if(state.path.length === 0 && state.targetPoints) {
-    state.path.push({x: state.targetPoints[0].x, y: state.targetPoints[0].y});
-  } else if (state.path.length === 0) {
-    state.path.push({x:toWorldX(px),y:toWorldY(py)});
-  }
+  state.path.push({x:toWorldX(px),y:toWorldY(py)});
   render();
 });
 canvas.addEventListener('pointermove',e=>{
